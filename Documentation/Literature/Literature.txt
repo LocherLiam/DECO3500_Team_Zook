@@ -1,0 +1,36 @@
+https://compass.onlinelibrary.wiley.com/doi/pdfdirect/10.1111/soc4.12487
+https://journals.sagepub.com/doi/pdf/10.3233/HSM-130794
+
+
+https://www.cs.tufts.edu/~nr/cs257/archive/teaching/barbara-oakley/JSCL-collaboration.pdf
+From a professor's POV
+
+
+----Some articles Liam Found on the space----
+
+https://www.frontiersin.org/journals/education/articles/10.3389/feduc.2022.980445/full : Collaboration in technology infused classrooms
+
+https://link.springer.com/article/10.1007/s11251-019-09486-1 : smart classroom infrastructure
+
+https://ieeexplore.ieee.org/abstract/document/8001727
+
+Interesting: https://dl.acm.org/doi/abs/10.1145/3686964 : people associate complexity of sharing details with security.
+https://dl.acm.org/doi/abs/10.1145/3678884.3681818 : similar- secure sharing of information for groups
+
+https://bera-journals.onlinelibrary.wiley.com/doi/full/10.1111/j.1467-8535.2011.01259.x : multitouch tables for collaboration
+
+https://dl.acm.org/doi/abs/10.1145/3240167.3240177
+
+https://dl.acm.org/doi/10.1145/3633074 : To Share or Not to Share: Understanding and Modeling Individual Disclosure Preferences in Recommender Systems for the Workplace
+
+https://dl.acm.org/doi/10.1145/3359168 : Higher Education Check-Ins: Exploring the User Experience of Hybrid Location Sensing
+
+
+
+----Articles of information sharing in teams----
+
+
+https://dl.acm.org/doi/pdf/10.1145/958160.958198
+https://www.sciencedirect.com/science/article/pii/S0148296315002258?casa_token=PMW8dD6PeMAAAAAA:QI-L21DOsqjHw5I-tOsEb3B1qRoCRegZi2JbDpe1yolMMP938yttaxPwVHMH-g5DIoUA-GgDDlI
+https://journals.sagepub.com/doi/pdf/10.1177/1059601114520969
+https://www.researchgate.net/profile/Melanie-Ashleigh/publication/233701509_Knowledge_sharing_and_team_trustworthiness_It%27s_all_about_social_ties/links/58511bfa08aed95c250b8cf7/Knowledge-sharing-and-team-trustworthiness-Its-all-about-social-ties.pdf
