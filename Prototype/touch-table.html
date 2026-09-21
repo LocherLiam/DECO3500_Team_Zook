@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Tangible Touch Table Prototype</title>
+<style>
+  :root{
+    --bg:#15161a;
+    --surface:#1e2025;
+    --surface-2:#26282e;
+    --ink:#eef0f3;
+    --muted:#9295a1;
+    --line: rgba(255,255,255,0.08);
+    --grid-dot: rgba(255,255,255,0.09);
+    --accent:#5ac8a8;
+    --danger:#e2637a;
+    --toolbar-bg: rgba(18,19,22,0.92);
+    --toolbar-ring: rgba(255,255,255,0.18);
+    --toolbar-ring-active: rgba(255,255,255,0.55);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden; position:fixed; overscroll-behavior:none;
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  #app{ position:fixed; inset:0; touch-action:none; user-select:none; }
+  canvas{ position:absolute; inset:0; display:block; touch-action:none; }
+
+  /* ---- top bar ---- */
+  #topbar{
+    position:fixed; left:0; right:0;
+    top:calc(env(safe-area-inset-top,0px) + 10px);
+    display:flex; align-items:center; gap:10px;
+    justify-content:center; flex-wrap:wrap;
+    pointer-events:none; z-index:20;
+  }
+  .pill{
+    pointer-events:auto;
+    display:flex; align-items:center; gap:8px;
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:999px; padding:6px 8px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.35);
+  }
+  .swatch{
+    width:26px; height:26px; border-radius:50%;
+    border:2px solid transparent; cursor:pointer;
+  }
+  .swatch.active{ border-color:#fff; }
+  .btn{
+    border:none; border-radius:999px; padding:8px 14px;
+    font-size:13px; font-weight:600; letter-spacing:0.01em;
+    background:var(--surface-2); color:var(--ink);
+    cursor:pointer;
+  }
+  .btn.on{ background:var(--accent); color:#08211a; }
+  .btn.danger{ color:var(--danger); }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); }
+
+  /* ---- toolbar spawned by a placed object ---- */
+  .toolbar{
+    position:fixed; z-index:15; pointer-events:none;
+    display:flex; align-items:center; justify-content:center;
+    transform:translate(-50%,-50%);
+    animation:pop 140ms ease-out;
+  }
+  @keyframes pop{ from{ transform:translate(-50%,-50%) scale(0.6); opacity:0; } to{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
+  @keyframes glowPulse{ 0%,100%{ transform:translate(-50%,-50%) scale(1); opacity:0.55; } 50%{ transform:translate(-50%,-50%) scale(1.09); opacity:0.85; } }
+  .toolbar-glow{
+    position:absolute; left:50%; top:50%; border-radius:50%;
+    background:radial-gradient(circle, var(--accent) 0%, transparent 72%);
+    animation:glowPulse 1.1s ease-in-out infinite;
+    z-index:0;
+  }
+  .toolbar-ring{
+    position:absolute; border-radius:50%;
+    border:4px dashed var(--toolbar-ring-active);
+    z-index:1;
+  }
+  .toolbar-core{
+    position:relative; z-index:2;
+    background:var(--toolbar-bg); color:var(--ink);
+    border-radius:50%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    font-size:15px; font-weight:700; letter-spacing:0.04em;
+    border:2px solid var(--accent);
+    box-shadow:0 0 24px rgba(90,200,168,0.55);
+  }
+  .toolbar-core span{ color:var(--muted); font-weight:600; font-size:13px; margin-top:3px; }
+  .toolbar-dot{
+    position:absolute; left:50%; top:50%; border-radius:50%;
+    border:2px solid rgba(0,0,0,0.35);
+    transition:transform 120ms ease;
+  }
+  .toolbar-dot.hit{ transform:translate(-50%,-50%) scale(1.35) !important; }
+
+  /* ---- debug panel ---- */
+  #debug{
+    position:fixed; right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    width:230px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px; font-size:12px; color:var(--muted);
+    z-index:20; display:none; pointer-events:auto;
+  }
+  #debug.open{ display:block; }
+  #debug h4{ margin:0 0 8px; color:var(--ink); font-size:12px; letter-spacing:0.02em; }
+  #debug label{ display:block; margin-top:10px; }
+  #debug input[type=range]{ width:100%; }
+  #debug .row{ display:flex; justify-content:space-between; }
+  #debugList{ margin-top:8px; max-height:90px; overflow:auto; }
+  #debugList div{ padding:2px 0; border-top:1px solid var(--line); }
+
+  #hint{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+    transform:translateX(-50%);
+    background:var(--surface); border:1px solid var(--line);
+    padding:8px 14px; border-radius:999px; font-size:12px; color:var(--muted);
+    z-index:20; pointer-events:none; text-align:center; max-width:90vw;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="canvas"></canvas>
+  <div id="topbar">
+    <div class="pill" id="palette"></div>
+    <div class="pill">
+      <button class="btn on" id="modeBtn">1 finger: draw</button>
+      <button class="btn ghost" id="clearBtn">Clear</button>
+      <button class="btn ghost danger" id="resetObjectsBtn">Reset objects</button>
+      <button class="btn ghost" id="debugBtn">Tune ⚙</button>
+    </div>
+  </div>
+  <div id="hint">1 finger draws · 2 fingers pan · 3+ close together = object</div>
+  <div id="debug">
+    <h4>Detection tuning</h4>
+    <label>Cluster radius: <span id="radiusVal"></span>px
+      <input type="range" id="radiusSlider" min="40" max="220" step="5" />
+    </label>
+    <label>Buffer delay: <span id="delayVal"></span>ms
+      <input type="range" id="delaySlider" min="15" max="150" step="5" />
+    </label>
+    <label>Merge window (late feet): <span id="mergeVal"></span>ms
+      <input type="range" id="mergeSlider" min="100" max="700" step="20" />
+    </label>
+    <div class="row"><span>Active touches</span><span id="touchCount">0</span></div>
+    <div id="debugList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- config (tunable live via debug panel) ----------
+  let CLUSTER_RADIUS = 90;    // px: touches within this distance are one cluster
+  let BUFFER_MS = 45;         // ms: how long to wait for simultaneous touches to land
+  let MERGE_WINDOW_MS = 280;  // ms: grace period for a late-landing foot to join an already-started cluster
+
+  const COLORS = ['#5ac8a8', '#e2637a', '#f2c14e', '#5a8de2'];
+  let currentColor = COLORS[0];
+  let mode = 'draw'; // single-finger behaviour: 'draw' or 'pan'
+
+  // ---------- canvas setup ----------
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resize(){
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = Math.floor(window.innerWidth * dpr);
+    canvas.height = Math.floor(window.innerHeight * dpr);
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    render();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- state ----------
+  const livePositions = new Map();   // touchId -> {x,y}  (all currently active touches)
+  const pendingBuffer = [];          // [{id,x,y}] not yet classified into a cluster
+  let bufferTimer = null;
+
+  const touchToCluster = new Map();  // touchId -> clusterId
+  const clusters = new Map();        // clusterId -> {id,type,touchIds,...}
+  let nextClusterId = 1;
+
+  const strokes = [];                // [{points:[{x,y}], color}]  points are world-space
+  const activeStrokeByTouch = new Map(); // touchId -> index into strokes
+
+  let panOffset = { x: 0, y: 0 };
+
+  const toolbarEls = new Map(); // clusterId -> DOM element
+
+  // ---------- helpers ----------
+  function dist(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
+  function avg(items){
+    let x = 0, y = 0;
+    for (const it of items){ x += it.x; y += it.y; }
+    return { x: x / items.length, y: y / items.length };
+  }
+  function screenToWorld(x, y){ return { x: x - panOffset.x, y: y - panOffset.y }; }
+
+  function clusterCentroidFromLive(cluster){
+    const pts = [];
+    for (const id of cluster.touchIds){
+      const p = livePositions.get(id);
+      if (p) pts.push(p);
+    }
+    return pts.length ? avg(pts) : cluster.centroid || cluster.lastCentroid;
+  }
+
+  // ---------- classification ----------
+  function scheduleClassify(){
+    if (bufferTimer == null){
+      bufferTimer = setTimeout(classifyPending, BUFFER_MS);
+    }
+  }
+
+  function classifyPending(){
+    bufferTimer = null;
+    const buf = pendingBuffer.splice(0, pendingBuffer.length);
+    if (!buf.length) return;
+
+    // union-find clustering by proximity
+    const n = buf.length;
+    const parent = Array.from({length:n}, (_, i) => i);
+    function find(i){ while (parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+    function union(i, j){ const ri = find(i), rj = find(j); if (ri !== rj) parent[ri] = rj; }
+    for (let i = 0; i < n; i++){
+      for (let j = i + 1; j < n; j++){
+        if (dist(buf[i], buf[j]) <= CLUSTER_RADIUS) union(i, j);
+      }
+    }
+    const groups = new Map();
+    for (let i = 0; i < n; i++){
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(buf[i]);
+    }
+    for (const items of groups.values()) createCluster(items);
+    render();
+    updateDebug();
+  }
+
+  function findToolbarHit(x, y){
+    for (const cluster of clusters.values()){
+      if (cluster.type !== 'object') continue;
+      const c = cluster.centroid;
+      if (!c) continue;
+      const d = dist({x,y}, c);
+      const R = toolbarRadius(cluster);
+      if (Math.abs(d - R) <= 34) return { cluster, x, y };
+    }
+    return null;
+  }
+
+  function toolbarRadius(cluster){
+    return 130 + Math.min(cluster.touchIds.size, 6) * 12;
+  }
+
+  function handleToolTap(hit){
+    const { cluster, x, y } = hit;
+    const c = cluster.centroid;
+    const angle = (Math.atan2(y - c.y, x - c.x) + Math.PI * 2.5) % (Math.PI * 2);
+    const idx = Math.round(angle / (Math.PI * 2 / COLORS.length)) % COLORS.length;
+    setColor(COLORS[idx]);
+    const el = toolbarEls.get(cluster.id);
+    if (el){
+      const dot = el.querySelectorAll('.toolbar-dot')[idx];
+      if (dot){
+        dot.classList.add('hit');
+        setTimeout(() => dot.classList.remove('hit'), 220);
+      }
+    }
+  }
+
+  function createCluster(items){
+    const touchIds = new Set(items.map(it => it.id));
+    let type;
+    if (items.length >= 3) type = 'object';
+    else if (items.length === 2) type = 'pan';
+    else type = 'draw';
+
+    if (type === 'draw'){
+      const hit = findToolbarHit(items[0].x, items[0].y);
+      if (hit){ handleToolTap(hit); return; } // tool tap, not a stroke — cluster never registers
+    }
+
+    const cluster = { id: nextClusterId++, type, touchIds, openUntil: performance.now() + MERGE_WINDOW_MS };
+    clusters.set(cluster.id, cluster);
+    for (const id of touchIds) touchToCluster.set(id, cluster.id);
+
+    if (type === 'draw'){
+      const id = items[0].id;
+      const start = screenToWorld(items[0].x, items[0].y);
+      const idx = strokes.length;
+      strokes.push({ points: [start], color: mode === 'draw' ? currentColor : null });
+      if (mode === 'draw') activeStrokeByTouch.set(id, idx);
+      cluster.strokeIndex = idx;
+      cluster.strokeIndexTouchId = id;
+      cluster.behaviour = mode; // 'draw' or 'pan' depending on toggle, for single-finger case
+      if (mode === 'pan'){
+        strokes.pop(); // no stroke needed for a pan gesture
+        cluster.lastCentroid = avg(items);
+      }
+    } else if (type === 'pan'){
+      cluster.lastCentroid = avg(items);
+    } else if (type === 'object'){
+      cluster.centroid = avg(items);
+      createToolbarEl(cluster);
+    }
+  }
+
+  function findMergeCandidate(x, y, now){
+    let best = null, bestDist = Infinity;
+    for (const cluster of clusters.values()){
+      if (cluster.openUntil == null || now > cluster.openUntil) continue;
+      for (const id of cluster.touchIds){
+        const p = livePositions.get(id);
+        if (!p) continue;
+        const d = dist({x,y}, p);
+        if (d <= CLUSTER_RADIUS && d < bestDist){ bestDist = d; best = cluster; }
+      }
+    }
+    return best;
+  }
+
+  function mergeTouchIntoCluster(cluster, item){
+    const now = performance.now();
+    cluster.openUntil = now + MERGE_WINDOW_MS; // sliding grace window
+
+    if (cluster.type === 'draw'){
+      // discard whatever tiny stroke this single-finger guess started
+      if (cluster.strokeIndex != null && strokes[cluster.strokeIndex]) strokes[cluster.strokeIndex].points = [];
+      if (cluster.strokeIndexTouchId != null) activeStrokeByTouch.delete(cluster.strokeIndexTouchId);
+    }
+
+    cluster.touchIds.add(item.id);
+    touchToCluster.set(item.id, cluster.id);
+
+    const size = cluster.touchIds.size;
+    const newType = size >= 3 ? 'object' : (size === 2 ? 'pan' : 'draw');
+    const wasObject = cluster.type === 'object';
+    cluster.type = newType;
+
+    const centroid = clusterCentroidFromLive(cluster) || avg([item]);
+    if (newType === 'pan') cluster.lastCentroid = centroid;
+    if (newType === 'object'){
+      cluster.centroid = centroid;
+      if (wasObject) refreshToolbar(cluster); else createToolbarEl(cluster);
+    }
+  }
+
+  function refreshToolbar(cluster){
+    removeToolbarEl(cluster.id);
+    createToolbarEl(cluster);
+  }
+
+  function createToolbarEl(cluster){
+    const el = document.createElement('div');
+    el.className = 'toolbar';
+    const R = toolbarRadius(cluster);
+    const size = R * 2 + 26;
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+
+    const glow = document.createElement('div');
+    glow.className = 'toolbar-glow';
+    glow.style.width = (R * 1.9) + 'px';
+    glow.style.height = (R * 1.9) + 'px';
+    el.appendChild(glow);
+
+    const ring = document.createElement('div');
+    ring.className = 'toolbar-ring';
+    ring.style.width = (R * 2) + 'px';
+    ring.style.height = (R * 2) + 'px';
+    ring.style.left = '50%'; ring.style.top = '50%';
+    ring.style.transform = 'translate(-50%,-50%)';
+    el.appendChild(ring);
+
+    const core = document.createElement('div');
+    core.className = 'toolbar-core';
+    const coreSize = Math.max(90, R * 0.62);
+    core.style.width = coreSize + 'px';
+    core.style.height = coreSize + 'px';
+    core.innerHTML = 'OBJECT<span>' + cluster.touchIds.size + ' pts</span>';
+    el.appendChild(core);
+
+    COLORS.forEach((color, i) => {
+      const dot = document.createElement('div');
+      dot.className = 'toolbar-dot';
+      dot.style.width = '46px'; dot.style.height = '46px';
+      dot.style.background = color;
+      dot.style.boxShadow = '0 0 12px rgba(0,0,0,0.4)';
+      const angle = i * (Math.PI * 2 / COLORS.length) - Math.PI / 2;
+      const dx = Math.cos(angle) * R, dy = Math.sin(angle) * R;
+      dot.style.transform = `translate(${dx - 23}px, ${dy - 23}px)`;
+      el.appendChild(dot);
+    });
+
+    document.getElementById('app').appendChild(el);
+    positionToolbar(el, cluster.centroid);
+    toolbarEls.set(cluster.id, el);
+  }
+
+  function positionToolbar(el, centroid){
+    el.style.left = centroid.x + 'px';
+    el.style.top = centroid.y + 'px';
+  }
+
+  function removeToolbarEl(clusterId){
+    const el = toolbarEls.get(clusterId);
+    if (el){ el.remove(); toolbarEls.delete(clusterId); }
+  }
+
+  // ---------- touch handlers ----------
+  function onTouchStart(e){
+    e.preventDefault();
+    const now = performance.now();
+    for (const t of e.changedTouches){
+      const id = t.identifier, x = t.clientX, y = t.clientY;
+      endTouch(id); // defensive: clear any stale leftover state if this id was recycled
+
+      livePositions.set(id, { x, y });
+
+      const tap = findToolbarHit(x, y);
+      if (tap){ handleToolTap(tap); continue; } // tap on an existing toolbar ring, not a new touch
+
+      const mergeCandidate = findMergeCandidate(x, y, now);
+      if (mergeCandidate){ mergeTouchIntoCluster(mergeCandidate, { id, x, y }); continue; }
+
+      pendingBuffer.push({ id, x, y });
+    }
+    reconcile(e);
+    scheduleClassify();
+    render();
+    updateDebug();
+  }
+
+  function onTouchMove(e){
+    const touchedClusters = new Set();
+    let tracked = false;
+    for (const t of e.changedTouches){
+      const id = t.identifier;
+      if (livePositions.has(id)) tracked = true;
+      livePositions.set(id, { x: t.clientX, y: t.clientY });
+
+      const pend = pendingBuffer.find(p => p.id === id);
+      if (pend){ pend.x = t.clientX; pend.y = t.clientY; continue; }
+
+      const clusterId = touchToCluster.get(id);
+      if (clusterId == null) continue;
+      touchedClusters.add(clusterId);
+
+      const cluster = clusters.get(clusterId);
+      if (!cluster) continue;
+      if (cluster.type === 'draw' && cluster.behaviour === 'draw'){
+        const idx = activeStrokeByTouch.get(id);
+        if (idx != null) strokes[idx].points.push(screenToWorld(t.clientX, t.clientY));
+      }
+    }
+    if (tracked) e.preventDefault();
+
+    for (const clusterId of touchedClusters){
+      const cluster = clusters.get(clusterId);
+      if (!cluster) continue;
+      if (cluster.type === 'pan' || (cluster.type === 'draw' && cluster.behaviour === 'pan')){
+        const centroid = clusterCentroidFromLive(cluster);
+        if (cluster.lastCentroid && centroid){
+          panOffset.x += centroid.x - cluster.lastCentroid.x;
+          panOffset.y += centroid.y - cluster.lastCentroid.y;
+        }
+        cluster.lastCentroid = centroid;
+      } else if (cluster.type === 'object'){
+        const centroid = clusterCentroidFromLive(cluster);
+        cluster.centroid = centroid;
+        const el = toolbarEls.get(clusterId);
+        if (el && centroid) positionToolbar(el, centroid);
+      }
+    }
+    reconcile(e);
+    render();
+  }
+
+  function endTouch(id){
+    livePositions.delete(id);
+
+    const pIdx = pendingBuffer.findIndex(p => p.id === id);
+    if (pIdx >= 0){ pendingBuffer.splice(pIdx, 1); return; }
+
+    const clusterId = touchToCluster.get(id);
+    if (clusterId == null) return;
+    touchToCluster.delete(id);
+    activeStrokeByTouch.delete(id);
+
+    const cluster = clusters.get(clusterId);
+    if (!cluster) return;
+    cluster.touchIds.delete(id);
+    if (cluster.touchIds.size === 0){
+      if (cluster.type === 'object') removeToolbarEl(clusterId);
+      clusters.delete(clusterId);
+    }
+  }
+
+  // Safety net: reconcile our tracked touches against the browser's actual current
+  // touch list (e.touches = every touch still down, regardless of which element it's
+  // over). Catches any touch we lost track of — e.g. a touchend that landed on a UI
+  // overlay, or an end event the browser failed to deliver for a marginal/flickery contact.
+  function reconcile(e){
+    const stillActive = new Set();
+    for (const t of e.touches) stillActive.add(t.identifier);
+    for (const id of Array.from(livePositions.keys())){
+      if (!stillActive.has(id)) endTouch(id);
+    }
+  }
+
+  function onTouchEnd(e){
+    let tracked = false;
+    for (const t of e.changedTouches){
+      if (livePositions.has(t.identifier)) tracked = true;
+      endTouch(t.identifier);
+    }
+    if (tracked) e.preventDefault();
+    reconcile(e);
+    render();
+    updateDebug();
+  }
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive:false });
+  window.addEventListener('touchmove', onTouchMove, { passive:false });
+  window.addEventListener('touchend', onTouchEnd, { passive:false });
+  window.addEventListener('touchcancel', onTouchEnd, { passive:false });
+
+  // ---------- rendering ----------
+  function drawGrid(){
+    const spacing = 34;
+    ctx.fillStyle = getVar('--grid-dot');
+    const w = window.innerWidth, h = window.innerHeight;
+    for (let y = spacing/2; y < h; y += spacing){
+      for (let x = spacing/2; x < w; x += spacing){
+        ctx.beginPath();
+        ctx.arc(x, y, 1.4, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function getVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function render(){
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = getVar('--bg');
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    drawGrid();
+
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 4;
+    for (const s of strokes){
+      if (!s.color || s.points.length < 2) continue;
+      ctx.strokeStyle = s.color;
+      ctx.beginPath();
+      ctx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---------- top bar UI ----------
+  const palette = document.getElementById('palette');
+  COLORS.forEach((color, i) => {
+    const b = document.createElement('div');
+    b.className = 'swatch' + (i === 0 ? ' active' : '');
+    b.style.background = color;
+    b.addEventListener('click', () => setColor(color));
+    palette.appendChild(b);
+  });
+  function setColor(color){
+    currentColor = color;
+    [...palette.children].forEach(el => el.classList.toggle('active', el.style.backgroundColor === hexToRgbStr(color)));
+  }
+  function hexToRgbStr(hex){
+    const c = document.createElement('div');
+    c.style.color = hex;
+    document.body.appendChild(c);
+    const rgb = getComputedStyle(c).color;
+    c.remove();
+    return rgb;
+  }
+
+  const modeBtn = document.getElementById('modeBtn');
+  modeBtn.addEventListener('click', () => {
+    mode = mode === 'draw' ? 'pan' : 'draw';
+    modeBtn.textContent = mode === 'draw' ? '1 finger: draw' : '1 finger: pan';
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    strokes.length = 0;
+    render();
+  });
+
+  document.getElementById('resetObjectsBtn').addEventListener('click', () => {
+    for (const id of toolbarEls.keys()) removeToolbarEl(id);
+    clusters.clear();
+    touchToCluster.clear();
+    activeStrokeByTouch.clear();
+    pendingBuffer.length = 0;
+    updateDebug();
+  });
+
+  const debugPanel = document.getElementById('debug');
+  document.getElementById('debugBtn').addEventListener('click', () => {
+    debugPanel.classList.toggle('open');
+  });
+
+  const radiusSlider = document.getElementById('radiusSlider');
+  const delaySlider = document.getElementById('delaySlider');
+  radiusSlider.value = CLUSTER_RADIUS;
+  delaySlider.value = BUFFER_MS;
+  document.getElementById('radiusVal').textContent = CLUSTER_RADIUS;
+  document.getElementById('delayVal').textContent = BUFFER_MS;
+  radiusSlider.addEventListener('input', () => {
+    CLUSTER_RADIUS = Number(radiusSlider.value);
+    document.getElementById('radiusVal').textContent = CLUSTER_RADIUS;
+  });
+  delaySlider.addEventListener('input', () => {
+    BUFFER_MS = Number(delaySlider.value);
+    document.getElementById('delayVal').textContent = BUFFER_MS;
+  });
+
+  const mergeSlider = document.getElementById('mergeSlider');
+  mergeSlider.value = MERGE_WINDOW_MS;
+  document.getElementById('mergeVal').textContent = MERGE_WINDOW_MS;
+  mergeSlider.addEventListener('input', () => {
+    MERGE_WINDOW_MS = Number(mergeSlider.value);
+    document.getElementById('mergeVal').textContent = MERGE_WINDOW_MS;
+  });
+
+  function updateDebug(){
+    document.getElementById('touchCount').textContent = livePositions.size;
+    const list = document.getElementById('debugList');
+    list.innerHTML = '';
+    for (const cluster of clusters.values()){
+      const row = document.createElement('div');
+      row.textContent = `#${cluster.id} · ${cluster.type} · ${cluster.touchIds.size} pt`;
+      list.appendChild(row);
+    }
+  }
+
+  resize();
+  setInterval(updateDebug, 300);
+})();
+</script>
+</body>
+</html>
