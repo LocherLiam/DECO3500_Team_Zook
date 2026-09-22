@@ -1,0 +1,65 @@
+Problem space, design opportunity,  Zook concept, intended experience
+
+Our project is called Zook and it explores how a shared tangible digital workspace can support co-located group collaboration, while still giving each person their own identity and controls. Our specific context is group assessment taking place in UQ classrooms. The problem space we started with was group-assigned tasks in classroom environments. A lot of work still happens using things like butcher paper, whiteboards or one shared digital device. We identified two main issues. First being, contribution can become centred around whoever is holding the pen and while everyone may be a part of the conversation, they do not have the same ability to interact with the shared work. Secondly, physical brainstorming can be difficult to take out of the classroom, a photo can capture the work but it does not preserve the actual editable workspace.
+
+This led us to our design opportunity: how can we support the transition between face-to-face and digital collaboration while maintaining the social qualities of working together in the same classroom. Our concept is Zook, a hexagonal digital tabletop where multiple people can contribute to the same shared workspace, save it and then access it outside the classroom. To login we have developed the idea that each participant has a physical figurine, and placing this onto the surface identifies that user and connects them to their own toolbar.
+
+Our intended experience isn't just people independently using their own screens but a shared social activity where people can see, discuss and build on each other's contributions. We are also exploring whether the figurines can make participation feel more playful and personally meaningful. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Interviews, research findings, early concepts
+
+Each member of our group conducted interviews and three themes emerged. First, students regularly move between in-person discussion and digital tools, meaning collaboration does not stop when the classroom session finishes. Second, students value fair contribution and accountability. They want to feel included and heard while also understanding what their teammates are contributing. Lastly students want to know what the rest of the team is doing so they can reduce confusion, duplicated work and unequal workload.
+
+We also found varied confidence with digital collaboration tools, meaning Zook needs to be understandable without assuming every user is comfortable with a complex digital system. If one person controlling a shared device is already a problem, creating another shared digital whiteboard would not necessarily change that behaviour. This pushed us toward the idea of providing individual identity and control within the shared space. We didn't want the solution to just become everyone working separately on their own laptops, because that would remove a lot of the social qualities of standing around a shared physical workspace.
+
+One of our questions became, how much individual control can we introduce while still maintaining group awareness, discussion and shared responsibility? This led us towards Zook's combination of one shared digital surface with multiple individually identified users. We then began exploring how users might join that workspace and rather than a traditional login screen, we became interested in physical tokens because they could make identity visible within the shared environment. This eventually developed into the figurine idea. We thought that giving each participant a physical object could provide a clear connection between the person and their digital identity. We were also interested in whether its playful qualities could help create conversation or make interaction feel less formal.
+
+
+
+Workshop 1 & 2, differences in each
+
+After our interviews we moved on from what people said about collaboration to observing how people actually interacted during collaborative activities. We ran two workshops, and an important part of these workshops was to explore the role of the physical figurines.
+
+In our first workshop, we asked participants on a piece of butcher paper to collaboratively create a book cover and story. We introduced the figurines as physical representations of each participant. However, it quickly became clear that the participants mainly treated the figurines as characters or objects within the story they were creating. While not our original thought, it was very useful as it challenged our assumption that the figurines would naturally be understood as representations of the user and as a connection between the physical and the digital space. From this, we realised that having a physical figurine present didn't naturally create this association and we could not assume that a person would automatically understand or want it to represent them. 
+
+For our second workshop we changed the way the figurines were used. Participants were asked to draw and describe their dream car collaboratively, but this time they had to hold the figurine if they wanted to contribute to the page. The purpose of this change was to create a stronger connection between the participant and the figurine. Rather than the figurine just being a part of the activity we wanted to explore whether holding it would make them feel more connected to it. We noticed participants sometimes forgot to pick it up, and teammates had to occasionally remind each other to hold their characters. One participant also found it easier to place the figurine onto the page with one hand and write with the other. This suggested that continuously holding or moving the figurine may not be a natural or convenient interaction. The figurine may work better if it could be placed nearby and remain associated with them without requiring constant physical handling. 
+
+The main behaviour we saw across nearly all participants was that when they did hold the figurines, they often interacted with them, analysed them or played with them and seemed to become more engaged with the task; they did inspire engagement, but we still had to figure out how this could be pushed towards greater engagement between team mates.
+
+Across both workshops, we could clearly see that people were interested in the figurines and naturally wanted to interact with them. However, the way that they were currently incorporated into the activities was too inconvenient and required too much conscious effort, which meant that this interest did not always translate into meaningful or consistent use.  This led us towards the idea that the character can be placed directly within the digital space itself and act as a persistent representation of the user, where it can be moved and interacted with, rather than something that must be constantly held.
+
+
+
+Experience requirements, design evolution/reasoning 
+
+Experience requirements from workshop & interviews 
+
+Initially, we considered implementing UQ ID cards to login to the digital workspace. However, we realised that the interaction needed to feel more playful and engaging to promote deeper bonds and better collaboration. This influenced the development of our prototype where we introduced figurines, and after analysing the workshops, determined to add interactions between the figurines themselves as well. Rather than the figurines only acting as individual representations of each user they could now respond to and interact with one another, and thus, should inspire participants to do the same with their teammates. 
+
+*FRAMEWORK NOTE*
+
+
+Current prototype, next steps and final prototype
+
+Current prototype:
+
+The current prototype consists of a cardboard ‘table’ to represent the digital workspace and Skylander figurines as the users’ avatars. Users will be given cardboard cutouts to represent the toolkit where they can access a pen, eraser, and export button. Furthermore, we will implement the Wizard of Oz prototyping method, where an observer will transfer all physically completed work onto a digital notepad that the users can then access.
+
+Next steps:
+
+First, we aim to develop a barebones functional prototype with multi-touch sensors, figure detection and page editing. This will allow the user to experience and comment on the digital aspect of the prototype. We will then test the prototype with target users in a context specific environment (a group task in a UQ classroom) to determine what further changes need to be made before the final iteration of the prototype is completed.
