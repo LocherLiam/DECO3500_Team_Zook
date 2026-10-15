@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Tangible Touch Table Prototype</title>
+<style>
+  :root{
+    --bg:#15161a;
+    --surface:#1e2025;
+    --surface-2:#26282e;
+    --ink:#eef0f3;
+    --muted:#9295a1;
+    --line: rgba(255,255,255,0.08);
+    --grid-dot: rgba(255,255,255,0.09);
+    --accent:#5ac8a8;
+    --danger:#e2637a;
+    --toolbar-bg: rgba(18,19,22,0.92);
+    --toolbar-ring: rgba(255,255,255,0.18);
+    --toolbar-ring-active: rgba(255,255,255,0.55);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden; position:fixed; overscroll-behavior:none;
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  #app{ position:fixed; inset:0; touch-action:none; user-select:none; }
+  canvas{ position:absolute; inset:0; display:block; touch-action:none; }
+
+  /* ---- top bar ---- */
+  #topbar{
+    position:fixed; left:0; right:0;
+    top:calc(env(safe-area-inset-top,0px) + 10px);
+    display:flex; align-items:center; gap:10px;
+    justify-content:center; flex-wrap:wrap;
+    pointer-events:none; z-index:20;
+  }
+  .pill{
+    pointer-events:auto;
+    display:flex; align-items:center; gap:8px;
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:999px; padding:6px 8px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.35);
+  }
+  .swatch{
+    width:26px; height:26px; border-radius:50%;
+    border:2px solid transparent; cursor:pointer;
+  }
+  .swatch.active{ border-color:#fff; }
+  .btn{
+    border:none; border-radius:999px; padding:8px 14px;
+    font-size:13px; font-weight:600; letter-spacing:0.01em;
+    background:var(--surface-2); color:var(--ink);
+    cursor:pointer;
+  }
+  .btn.on{ background:var(--accent); color:#08211a; }
+  .btn.danger{ color:var(--danger); }
+  .btn.ghost{ background:transparent; border:1px solid var(--line); }
+
+  /* ---- toolbar spawned by a placed object ---- */
+  .toolbar{
+    position:fixed; z-index:15; pointer-events:none;
+    display:flex; align-items:center; justify-content:center;
+    transform:translate(-50%,-50%);
+    animation:pop 140ms ease-out;
+  }
+  @keyframes pop{ from{ transform:translate(-50%,-50%) scale(0.6); opacity:0; } to{ transform:translate(-50%,-50%) scale(1); opacity:1; } }
+  @keyframes glowPulse{ 0%,100%{ transform:translate(-50%,-50%) scale(1); opacity:0.55; } 50%{ transform:translate(-50%,-50%) scale(1.09); opacity:0.85; } }
+  .toolbar-glow{
+    position:absolute; left:50%; top:50%; border-radius:50%;
+    background:radial-gradient(circle, var(--obj, var(--accent)) 0%, transparent 72%);
+    animation:glowPulse 1.1s ease-in-out infinite;
+    z-index:0;
+  }
+  .toolbar-ring{
+    position:absolute; border-radius:50%;
+    border:4px dashed var(--toolbar-ring-active);
+    z-index:1;
+  }
+  .toolbar-core{
+    position:relative; z-index:2;
+    background:var(--toolbar-bg); color:var(--ink);
+    border-radius:50%; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    font-size:15px; font-weight:700; letter-spacing:0.04em;
+    border:2px solid var(--obj, var(--accent));
+    box-shadow:0 0 24px var(--obj, var(--accent));
+  }
+  .toolbar-core span{ color:var(--muted); font-weight:600; font-size:13px; margin-top:3px; }
+  .toolbar-dot{
+    position:absolute; left:50%; top:50%; border-radius:50%;
+    border:2px solid rgba(0,0,0,0.35);
+    transform:translate(var(--tx),var(--ty));
+    transition:transform 120ms ease;
+  }
+  .toolbar-dot.hit{ transform:translate(var(--tx),var(--ty)) scale(1.35); }
+  .toolbar.asleep .toolbar-glow{ animation-duration:3.6s; }
+  .toolbar.asleep .toolbar-core{ box-shadow:0 0 8px var(--obj); }
+  #fx{ z-index:16; pointer-events:none; }
+  .toolbar-ring,.toolbar-dot{ display:none; }
+
+  /* ---- debug panel ---- */
+  #debug{
+    position:fixed; right:12px; bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    width:230px; background:var(--surface); border:1px solid var(--line);
+    border-radius:14px; padding:12px 14px; font-size:12px; color:var(--muted);
+    z-index:20; display:none; pointer-events:auto;
+  }
+  #debug.open{ display:block; }
+  #debug h4{ margin:0 0 8px; color:var(--ink); font-size:12px; letter-spacing:0.02em; }
+  #debug label{ display:block; margin-top:10px; }
+  #debug input[type=range]{ width:100%; }
+  #debug .row{ display:flex; justify-content:space-between; }
+  #debugList{ margin-top:8px; max-height:90px; overflow:auto; }
+  #debugList div{ padding:2px 0; border-top:1px solid var(--line); }
+
+  #hint{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 18px);
+    transform:translateX(-50%);
+    background:var(--surface); border:1px solid var(--line);
+    padding:8px 14px; border-radius:999px; font-size:12px; color:var(--muted);
+    z-index:20; pointer-events:none; text-align:center; max-width:90vw;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="canvas"></canvas>
+  <canvas id="fx"></canvas>
+  <div id="topbar">
+    <div class="pill">
+      <button class="btn on" id="modeBtn">1 finger: draw</button>
+      <button class="btn ghost" id="clearBtn">Clear</button>
+      <button class="btn ghost danger" id="resetObjectsBtn">Reset objects</button>
+      <button class="btn ghost" id="debugBtn">Tune ⚙</button>
+    </div>
+  </div>
+  <div id="hint">1 finger draws · 2 fingers pan · 3+ close together = figurine · toolbar handle: drag to rotate, tap to fold</div>
+  <div id="debug">
+    <h4>Detection tuning</h4>
+    <label>Cluster radius: <span id="radiusVal"></span>px
+      <input type="range" id="radiusSlider" min="40" max="220" step="5" />
+    </label>
+    <label>Buffer delay: <span id="delayVal"></span>ms
+      <input type="range" id="delaySlider" min="15" max="150" step="5" />
+    </label>
+    <label>Merge window (late feet): <span id="mergeVal"></span>ms
+      <input type="range" id="mergeSlider" min="100" max="700" step="20" />
+    </label>
+    <label>Link distance: <span id="linkVal"></span>px
+      <input type="range" id="linkSlider" min="150" max="700" step="10" />
+    </label>
+    <label>Sleep after: <span id="sleepVal"></span>s
+      <input type="range" id="sleepSlider" min="2" max="30" step="1" />
+    </label>
+    <label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" id="lobChk" /> Lob reactions (arc &amp; land)</label>
+    <div class="row"><span>Active touches</span><span id="touchCount">0</span></div>
+    <div id="debugList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- config (tunable live via debug panel) ----------
+  let CLUSTER_RADIUS = 90;    // px: touches within this distance are one cluster
+  let BUFFER_MS = 45;         // ms: how long to wait for simultaneous touches to land
+  let MERGE_WINDOW_MS = 280;  // ms: grace period for a late-landing foot to join an already-started cluster
+
+  const COLORS = ['#5ac8a8', '#e2637a', '#f2c14e', '#5a8de2', '#b07cf2', '#f2f2f2'];
+  let tool = 'pen'; // 'pen' or 'eraser'
+  let currentColor = COLORS[0];
+  let mode = 'draw'; // single-finger behaviour: 'draw' or 'pan'
+
+  // ---------- canvas setup ----------
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const fxCanvas = document.getElementById('fx');
+  const fx = fxCanvas.getContext('2d');
+  const layer = document.createElement('canvas'); // strokes live here so the eraser can cut through them
+  const lctx = layer.getContext('2d');
+  let dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resize(){
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    for (const c of [canvas, fxCanvas, layer]){
+      c.width = Math.floor(window.innerWidth * dpr);
+      c.height = Math.floor(window.innerHeight * dpr);
+      c.style.width = window.innerWidth + 'px';
+      c.style.height = window.innerHeight + 'px';
+    }
+    render();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- state ----------
+  const livePositions = new Map();   // touchId -> {x,y}  (all currently active touches)
+  const pendingBuffer = [];          // [{id,x,y}] not yet classified into a cluster
+  let bufferTimer = null;
+
+  const touchToCluster = new Map();  // touchId -> clusterId
+  const clusters = new Map();        // clusterId -> {id,type,touchIds,...}
+  let nextClusterId = 1;
+
+  const strokes = [];                // [{points:[{x,y}], color}]  points are world-space
+  const activeStrokeByTouch = new Map(); // touchId -> index into strokes
+
+  let panOffset = { x: 0, y: 0 };
+
+  const toolbarEls = new Map(); // clusterId -> DOM element
+
+  // ---------- helpers ----------
+  function dist(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
+  function avg(items){
+    let x = 0, y = 0;
+    for (const it of items){ x += it.x; y += it.y; }
+    return { x: x / items.length, y: y / items.length };
+  }
+  function screenToWorld(x, y){ return { x: x - panOffset.x, y: y - panOffset.y }; }
+
+  function clusterCentroidFromLive(cluster){
+    const pts = [];
+    for (const id of cluster.touchIds){
+      const p = livePositions.get(id);
+      if (p) pts.push(p);
+    }
+    return pts.length ? avg(pts) : cluster.centroid || cluster.lastCentroid;
+  }
+
+  // ---------- classification ----------
+  function scheduleClassify(){
+    if (bufferTimer == null){
+      bufferTimer = setTimeout(classifyPending, BUFFER_MS);
+    }
+  }
+
+  function classifyPending(){
+    bufferTimer = null;
+    const buf = pendingBuffer.splice(0, pendingBuffer.length);
+    if (!buf.length) return;
+
+    // union-find clustering by proximity
+    const n = buf.length;
+    const parent = Array.from({length:n}, (_, i) => i);
+    function find(i){ while (parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
+    function union(i, j){ const ri = find(i), rj = find(j); if (ri !== rj) parent[ri] = rj; }
+    for (let i = 0; i < n; i++){
+      for (let j = i + 1; j < n; j++){
+        if (dist(buf[i], buf[j]) <= CLUSTER_RADIUS) union(i, j);
+      }
+    }
+    const groups = new Map();
+    for (let i = 0; i < n; i++){
+      const r = find(i);
+      if (!groups.has(r)) groups.set(r, []);
+      groups.get(r).push(buf[i]);
+    }
+    for (const items of groups.values()) createCluster(items);
+    render();
+    updateDebug();
+  }
+
+  function findToolbarHit(x, y){
+    for (const cluster of clusters.values()){
+      if (cluster.type !== 'object') continue;
+      const c = cluster.centroid;
+      if (!c) continue;
+      if (cluster.ext != null && cluster.ext < 0.6) continue;
+      const item = barItems(cluster).find(it => it.k !== 'emoji' && it.k !== 'pivot' && dist({x,y}, it) <= it.r + 10);
+      if (item) return { cluster, item };
+    }
+    return null;
+  }
+
+  function toolbarRadius(cluster){
+    return 70 + Math.min(cluster.touchIds.size, 6) * 8;
+  }
+
+  function handleToolTap({ cluster, item }){
+    cluster.lastMoveAt = performance.now();
+    if (item.k === 'color') cluster.panel = 'colors';
+    else if (item.k === 'react') cluster.panel = 'reactions';
+    else if (item.k === 'back') cluster.panel = 'main';
+    else if (item.k === 'swatch'){ setColor(item.color); tool = 'pen'; }
+    else if (item.k === 'eraser') tool = tool === 'eraser' ? 'pen' : 'eraser';
+  }
+
+  function createCluster(items){
+    const touchIds = new Set(items.map(it => it.id));
+    let type;
+    if (items.length >= 3) type = 'object';
+    else if (items.length === 2) type = 'pan';
+    else type = 'draw';
+
+    if (type === 'draw'){
+      const hit = findToolbarHit(items[0].x, items[0].y);
+      if (hit){ handleToolTap(hit); return; } // tool tap, not a stroke — cluster never registers
+    }
+
+    const cluster = { id: nextClusterId++, type, touchIds, openUntil: performance.now() + MERGE_WINDOW_MS };
+    clusters.set(cluster.id, cluster);
+    for (const id of touchIds) touchToCluster.set(id, cluster.id);
+
+    if (type === 'draw'){
+      const id = items[0].id;
+      const start = screenToWorld(items[0].x, items[0].y);
+      const idx = strokes.length;
+      strokes.push({ points: [start], color: mode === 'draw' ? currentColor : null, erase: tool === 'eraser' });
+      if (mode === 'draw') activeStrokeByTouch.set(id, idx);
+      cluster.strokeIndex = idx;
+      cluster.strokeIndexTouchId = id;
+      cluster.behaviour = mode; // 'draw' or 'pan' depending on toggle, for single-finger case
+      if (mode === 'pan'){
+        strokes.pop(); // no stroke needed for a pan gesture
+        cluster.lastCentroid = avg(items);
+      }
+    } else if (type === 'pan'){
+      cluster.lastCentroid = avg(items);
+    } else if (type === 'object'){
+      cluster.centroid = avg(items);
+      createToolbarEl(cluster);
+    }
+  }
+
+  function findMergeCandidate(x, y, now){
+    let best = null, bestDist = Infinity;
+    for (const cluster of clusters.values()){
+      if (cluster.openUntil == null || now > cluster.openUntil) continue;
+      for (const id of cluster.touchIds){
+        const p = livePositions.get(id);
+        if (!p) continue;
+        const d = dist({x,y}, p);
+        if (d <= CLUSTER_RADIUS && d < bestDist){ bestDist = d; best = cluster; }
+      }
+    }
+    return best;
+  }
+
+  function mergeTouchIntoCluster(cluster, item){
+    const now = performance.now();
+    cluster.openUntil = now + MERGE_WINDOW_MS; // sliding grace window
+
+    if (cluster.type === 'draw'){
+      // discard whatever tiny stroke this single-finger guess started
+      if (cluster.strokeIndex != null && strokes[cluster.strokeIndex]) strokes[cluster.strokeIndex].points = [];
+      if (cluster.strokeIndexTouchId != null) activeStrokeByTouch.delete(cluster.strokeIndexTouchId);
+    }
+
+    cluster.touchIds.add(item.id);
+    touchToCluster.set(item.id, cluster.id);
+
+    const size = cluster.touchIds.size;
+    const newType = size >= 3 ? 'object' : (size === 2 ? 'pan' : 'draw');
+    const wasObject = cluster.type === 'object';
+    cluster.type = newType;
+
+    const centroid = clusterCentroidFromLive(cluster) || avg([item]);
+    if (newType === 'pan') cluster.lastCentroid = centroid;
+    if (newType === 'object'){
+      cluster.centroid = centroid;
+      if (wasObject) refreshToolbar(cluster); else createToolbarEl(cluster);
+    }
+  }
+
+  function refreshToolbar(cluster){
+    removeToolbarEl(cluster.id);
+    createToolbarEl(cluster);
+  }
+
+  function createToolbarEl(cluster){
+    if (!cluster.color){
+      cluster.color = COLORS[objColorIdx++ % COLORS.length];
+      cluster.lastMoveAt = performance.now();
+      cluster.lastAnchor = { ...cluster.centroid };
+      cluster.barAngle = 0; cluster.panel = 'main';
+    }
+    const el = document.createElement('div');
+    el.className = 'toolbar';
+    el.style.setProperty('--obj', cluster.color);
+    const R = toolbarRadius(cluster);
+    const size = R * 2 + 26;
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+
+    const glow = document.createElement('div');
+    glow.className = 'toolbar-glow';
+    glow.style.width = (R * 1.9) + 'px';
+    glow.style.height = (R * 1.9) + 'px';
+    el.appendChild(glow);
+
+    const ring = document.createElement('div');
+    ring.className = 'toolbar-ring';
+    ring.style.width = (R * 2) + 'px';
+    ring.style.height = (R * 2) + 'px';
+    ring.style.left = '50%'; ring.style.top = '50%';
+    ring.style.transform = 'translate(-50%,-50%)';
+    el.appendChild(ring);
+
+    const core = document.createElement('div');
+    core.className = 'toolbar-core';
+    const coreSize = Math.max(90, R * 0.62);
+    core.style.width = coreSize + 'px';
+    core.style.height = coreSize + 'px';
+    core.innerHTML = 'OBJECT<span>' + cluster.touchIds.size + ' pts</span>';
+    el.appendChild(core);
+
+    COLORS.forEach((color, i) => {
+      const dot = document.createElement('div');
+      dot.className = 'toolbar-dot';
+      dot.style.width = '46px'; dot.style.height = '46px';
+      dot.style.background = color;
+      dot.style.boxShadow = '0 0 12px rgba(0,0,0,0.4)';
+      const angle = i * (Math.PI * 2 / COLORS.length) - Math.PI / 2;
+      const dx = Math.cos(angle) * R, dy = Math.sin(angle) * R;
+      dot.style.setProperty('--tx', (dx - 23) + 'px');
+      dot.style.setProperty('--ty', (dy - 23) + 'px');
+      el.appendChild(dot);
+    });
+
+    document.getElementById('app').appendChild(el);
+    positionToolbar(el, cluster.centroid);
+    toolbarEls.set(cluster.id, el);
+  }
+
+  function positionToolbar(el, centroid){
+    el.style.left = centroid.x + 'px';
+    el.style.top = centroid.y + 'px';
+  }
+
+  function removeToolbarEl(clusterId){
+    const el = toolbarEls.get(clusterId);
+    if (el){ el.remove(); toolbarEls.delete(clusterId); }
+  }
+
+  // ---------- touch handlers ----------
+  function onTouchStart(e){
+    e.preventDefault();
+    const now = performance.now();
+    for (const t of e.changedTouches){
+      const id = t.identifier, x = t.clientX, y = t.clientY;
+      endTouch(id); // defensive: clear any stale leftover state if this id was recycled
+
+      livePositions.set(id, { x, y });
+
+      const lh = findLauncherHit(x, y);
+      if (lh){ slings.set(id, { clusterId: lh.cluster.id, idx: lh.i, emoji: lh.emoji, pivot: lh.pivot, start: { x, y }, finger: { x, y } }); continue; }
+
+      const tap = findToolbarHit(x, y);
+      if (tap){ handleToolTap(tap); continue; } // tap on an existing toolbar ring, not a new touch
+
+      const mergeCandidate = findMergeCandidate(x, y, now);
+      if (mergeCandidate){ mergeTouchIntoCluster(mergeCandidate, { id, x, y }); continue; }
+
+      pendingBuffer.push({ id, x, y });
+    }
+    reconcile(e);
+    scheduleClassify();
+    render();
+    updateDebug();
+  }
+
+  function onTouchMove(e){
+    const touchedClusters = new Set();
+    let tracked = false;
+    for (const t of e.changedTouches){
+      const id = t.identifier;
+      if (livePositions.has(id)) tracked = true;
+      livePositions.set(id, { x: t.clientX, y: t.clientY });
+
+      const sl = slings.get(id);
+      if (sl){ sl.finger = { x: t.clientX, y: t.clientY }; continue; }
+
+      const pend = pendingBuffer.find(p => p.id === id);
+      if (pend){ pend.x = t.clientX; pend.y = t.clientY; continue; }
+
+      const clusterId = touchToCluster.get(id);
+      if (clusterId == null) continue;
+      touchedClusters.add(clusterId);
+
+      const cluster = clusters.get(clusterId);
+      if (!cluster) continue;
+      if (cluster.type === 'draw' && cluster.behaviour === 'draw'){
+        const idx = activeStrokeByTouch.get(id);
+        if (idx != null) strokes[idx].points.push(screenToWorld(t.clientX, t.clientY));
+      }
+    }
+    if (tracked) e.preventDefault();
+
+    for (const clusterId of touchedClusters){
+      const cluster = clusters.get(clusterId);
+      if (!cluster) continue;
+      if (cluster.type === 'pan' || (cluster.type === 'draw' && cluster.behaviour === 'pan')){
+        const centroid = clusterCentroidFromLive(cluster);
+        if (cluster.lastCentroid && centroid){
+          panOffset.x += centroid.x - cluster.lastCentroid.x;
+          panOffset.y += centroid.y - cluster.lastCentroid.y;
+        }
+        cluster.lastCentroid = centroid;
+      } else if (cluster.type === 'object'){
+        const centroid = clusterCentroidFromLive(cluster);
+        cluster.centroid = centroid;
+        if (cluster.lastAnchor && centroid && dist(centroid, cluster.lastAnchor) > 10){
+          cluster.lastAnchor = { ...centroid };
+          cluster.lastMoveAt = performance.now();
+        }
+        const el = toolbarEls.get(clusterId);
+        if (el && centroid) positionToolbar(el, centroid);
+      }
+    }
+    reconcile(e);
+    render();
+  }
+
+  function endTouch(id){
+    slings.delete(id);
+    livePositions.delete(id);
+
+    const pIdx = pendingBuffer.findIndex(p => p.id === id);
+    if (pIdx >= 0){ pendingBuffer.splice(pIdx, 1); return; }
+
+    const clusterId = touchToCluster.get(id);
+    if (clusterId == null) return;
+    touchToCluster.delete(id);
+    activeStrokeByTouch.delete(id);
+
+    const cluster = clusters.get(clusterId);
+    if (!cluster) return;
+    cluster.touchIds.delete(id);
+    if (cluster.touchIds.size === 0){
+      if (cluster.type === 'object') removeToolbarEl(clusterId);
+      clusters.delete(clusterId);
+    }
+  }
+
+  // Safety net: reconcile our tracked touches against the browser's actual current
+  // touch list (e.touches = every touch still down, regardless of which element it's
+  // over). Catches any touch we lost track of — e.g. a touchend that landed on a UI
+  // overlay, or an end event the browser failed to deliver for a marginal/flickery contact.
+  function reconcile(e){
+    const stillActive = new Set();
+    for (const t of e.touches) stillActive.add(t.identifier);
+    for (const id of Array.from(livePositions.keys())){
+      if (!stillActive.has(id)) endTouch(id);
+    }
+  }
+
+  function onTouchEnd(e){
+    let tracked = false;
+    for (const t of e.changedTouches){
+      if (livePositions.has(t.identifier)) tracked = true;
+      if (slings.has(t.identifier)) releaseSling(t.identifier, e.type === 'touchend');
+      endTouch(t.identifier);
+    }
+    if (tracked) e.preventDefault();
+    reconcile(e);
+    render();
+    updateDebug();
+  }
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive:false });
+  window.addEventListener('touchmove', onTouchMove, { passive:false });
+  window.addEventListener('touchend', onTouchEnd, { passive:false });
+  window.addEventListener('touchcancel', onTouchEnd, { passive:false });
+
+  // ---------- rendering ----------
+  function drawGrid(){
+    const spacing = 34;
+    ctx.fillStyle = getVar('--grid-dot');
+    const w = window.innerWidth, h = window.innerHeight;
+    for (let y = spacing/2; y < h; y += spacing){
+      for (let x = spacing/2; x < w; x += spacing){
+        ctx.beginPath();
+        ctx.arc(x, y, 1.4, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function getVar(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function render(){
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = getVar('--bg');
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+    drawGrid();
+
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    lctx.save();
+    lctx.translate(panOffset.x, panOffset.y);
+    lctx.lineCap = 'round'; lctx.lineJoin = 'round';
+    for (const s of strokes){
+      if ((!s.color && !s.erase) || s.points.length < 2) continue;
+      lctx.globalCompositeOperation = s.erase ? 'destination-out' : 'source-over';
+      lctx.strokeStyle = s.erase ? '#000' : s.color;
+      lctx.lineWidth = s.erase ? 32 : 4;
+      lctx.beginPath();
+      lctx.moveTo(s.points[0].x, s.points[0].y);
+      for (let i = 1; i < s.points.length; i++) lctx.lineTo(s.points[i].x, s.points[i].y);
+      lctx.stroke();
+    }
+    lctx.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer, 0, 0);
+    startFx();
+  }
+
+  // ---------- FX: links, sleep z's, emoji slingshot ----------
+  const EMOJIS = ['❤️', '👍', '😂', '🎉'];
+  const EF = '"Apple Color Emoji","Segoe UI Emoji",sans-serif';
+  const MAX_PULL = 150, MIN_PULL = 20, FRICTION = 1.5, HIT_R = 72;
+  const slings = new Map(), projectiles = [], particles = [], links = new Map();
+  let LINK_DIST = 420, SLEEP_MS = 6000, LOB = false, objColorIdx = 0, fxRunning = false, fxLast = 0;
+
+  const objectClusters = () => [...clusters.values()].filter(c => c.type === 'object' && c.centroid);
+  const speedMax = () => Math.hypot(window.innerWidth, window.innerHeight) * FRICTION * 1.1;
+  function rgba(hex, a){ const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${Math.max(0, a)})`; }
+
+  function launcherPos(c, i){ // emoji slot on the bar (only while the reactions panel is open)
+    const it = c.panel === 'reactions' && (c.ext == null || c.ext > 0.6) && barItems(c).find(x => x.k === 'emoji' && x.i === i);
+    return it ? { x: it.x, y: it.y, a: c.barAngle } : null;
+  }
+  function findLauncherHit(x, y){
+    for (const c of objectClusters()){
+      const items = barItems(c), pv = items[items.length - 1];
+      for (let i = 0; i < EMOJIS.length; i++){ // emojis win ties so the handle can't steal a launch
+        const p = launcherPos(c, i);
+        if (p && Math.hypot(x - p.x, y - p.y) <= 36) return { cluster: c, i, emoji: EMOJIS[i] };
+      }
+      if (Math.hypot(x - pv.x, y - pv.y) <= pv.r + 8) return { cluster: c, i: -1, emoji: null, pivot: true };
+    }
+    return null;
+  }
+
+  function releaseSling(id, doLaunch){
+    const s = slings.get(id);
+    slings.delete(id);
+    const c = s && clusters.get(s.clusterId);
+    if (s && s.pivot){ if (c && doLaunch && !s.moved){ c.collapsed = !c.collapsed; c.lastMoveAt = performance.now(); } return; } // tap on handle = fold/unfold
+    if (!s || !doLaunch || !c || !c.centroid) return;
+    const home = launcherPos(c, s.idx);
+    if (!home) return;
+    const vx = home.x - s.finger.x, vy = home.y - s.finger.y, len = Math.hypot(vx, vy);
+    if (len < MIN_PULL) return;
+    const cl = Math.min(len, MAX_PULL), ux = vx / len, uy = vy / len, sp = speedMax() * cl / MAX_PULL;
+    const p = { emoji: s.emoji, x: home.x - ux * cl, y: home.y - uy * cl, vx: ux * sp, vy: uy * sp,
+      rot: 0, spin: (Math.random() - 0.5) * 8, owner: c.id, color: c.color, trail: [], fade: null };
+    if (LOB){ // arc upward and land: ground speed carries it, vz/gravity give the height
+      const pw = cl / MAX_PULL, T = 0.6 + 0.9 * pw, rng = lobRange(pw);
+      Object.assign(p, { lob: true, vx: ux * rng / T, vy: uy * rng / T, z: 0, vz: 1100 * T, g: 2200 });
+    }
+    projectiles.push(p);
+    c.lastMoveAt = performance.now();
+    startFx();
+  }
+
+  function deliver(p, c, now){
+    c.lastMoveAt = now;
+    const { x, y } = c.centroid;
+    particles.push({ k: 'ring', x, y, col: p.color, age: 0, life: 0.9 });
+    particles.push({ k: 'float', x, y: y - 50, vx: 0, vy: -70, t: p.emoji, age: 0, life: 1.8 });
+    for (let i = 0; i < 10; i++){
+      const a = i / 10 * 6.283, s = 120 + Math.random() * 80;
+      particles.push({ k: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, col: p.color, age: 0, life: 0.7 });
+    }
+  }
+
+  function updateFx(dt, now){
+    const objs = objectClusters();
+    for (const s of slings.values()){ // dragging the pivot handle swings the toolbar
+      const pc = s.pivot && clusters.get(s.clusterId);
+      if (pc && pc.centroid){
+        if (Math.hypot(s.finger.x - s.start.x, s.finger.y - s.start.y) > 12) s.moved = true; // a small wobble is still a tap
+        if (s.moved){ pc.barAngle = Math.atan2(s.finger.y - pc.centroid.y, s.finger.x - pc.centroid.x); pc.lastMoveAt = now; }
+      }
+    }
+    for (const c of objs){ // sleep
+      const e0 = c.ext == null ? 1 : c.ext; // animate fold/unfold
+      c.ext = e0 + ((c.collapsed ? 0 : 1) - e0) * Math.min(1, dt * 9);
+      const asleep = now - c.lastMoveAt > SLEEP_MS;
+      const el = toolbarEls.get(c.id);
+      if (el) el.classList.toggle('asleep', asleep);
+      if (asleep && now > (c.nextZ || 0)){
+        c.nextZ = now + 1000 + Math.random() * 500;
+        particles.push({ k: 'z', x: c.centroid.x + 26 + Math.random() * 10, y: c.centroid.y - 26,
+          t: 'zZz'[Math.floor(Math.random() * 3)], ph: Math.random() * 6, age: 0, life: 3 });
+      }
+    }
+    const keep = new Set(); // proximity links fade in/out smoothly
+    for (let i = 0; i < objs.length; i++) for (let j = i + 1; j < objs.length; j++){
+      const a = objs[i], b = objs[j], key = a.id + '-' + b.id;
+      keep.add(key);
+      const L = links.get(key) || { s: 0 };
+      L.s += ((dist(a.centroid, b.centroid) < LINK_DIST ? 1 : 0) - L.s) * Math.min(1, dt * 4);
+      L.a = a; L.b = b;
+      links.set(key, L);
+    }
+    for (const k of [...links.keys()]) if (!keep.has(k)) links.delete(k);
+
+    for (let i = particles.length - 1; i >= 0; i--){
+      const p = particles[i];
+      p.age += dt;
+      if (p.vx != null){ p.x += p.vx * dt; p.y += p.vy * dt; }
+      if (p.age > p.life) particles.splice(i, 1);
+    }
+
+    const W = window.innerWidth, H = window.innerHeight;
+    for (let i = projectiles.length - 1; i >= 0; i--){
+      const p = projectiles[i];
+      if (p.fade != null){ p.fade += dt; if (p.fade > 0.8) projectiles.splice(i, 1); continue; }
+      if (p.lob){
+        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vz -= p.g * dt;
+        p.rot += p.spin * dt * 0.5;
+        p.trail.push({ x: p.x, y: p.y - p.z }); if (p.trail.length > 12) p.trail.shift();
+        if (p.z <= 0 && p.vz < 0){
+          p.z = 0; p.x = Math.min(W - 24, Math.max(24, p.x)); p.y = Math.min(H - 24, Math.max(24, p.y));
+          const hit = objs.find(c => c.id !== p.owner && dist(p, c.centroid) < HIT_R * 1.2);
+          if (hit){ deliver(p, hit, now); projectiles.splice(i, 1); }
+          else { particles.push({ k: 'ring', x: p.x, y: p.y, col: p.color, age: 0, life: 0.6, sc: 0.5 }); p.fade = 0; }
+        }
+        continue;
+      }
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      const d = Math.exp(-FRICTION * dt); p.vx *= d; p.vy *= d;
+      const sp = Math.hypot(p.vx, p.vy);
+      p.rot += p.spin * dt * Math.min(1, sp / 500);
+      if (p.x < 24){ p.x = 24; p.vx = Math.abs(p.vx) * 0.7; }
+      if (p.x > W - 24){ p.x = W - 24; p.vx = -Math.abs(p.vx) * 0.7; }
+      if (p.y < 24){ p.y = 24; p.vy = Math.abs(p.vy) * 0.7; }
+      if (p.y > H - 24){ p.y = H - 24; p.vy = -Math.abs(p.vy) * 0.7; }
+      p.trail.push({ x: p.x, y: p.y }); if (p.trail.length > 12) p.trail.shift();
+      const hit = objs.find(c => c.id !== p.owner && dist(p, c.centroid) < HIT_R);
+      if (hit){ deliver(p, hit, now); projectiles.splice(i, 1); }
+      else if (sp < 30) p.fade = 0;
+    }
+  }
+
+  const lobRange = pw => speedMax() * pw / FRICTION * 0.8;
+
+  // Toolbar: a bar extending from the figurine along c.barAngle. Panels: main / colors / reactions.
+  function barItems(c){
+    const ext = c.ext == null ? 1 : c.ext, G = 100, S = c.panel === 'colors' ? 46 : 64, dx = Math.cos(c.barAngle), dy = Math.sin(c.barAngle);
+    let list;
+    if (c.panel === 'colors') list = [{ k: 'back' }, ...COLORS.map(color => ({ k: 'swatch', color }))];
+    else if (c.panel === 'reactions') list = [{ k: 'back' }, ...EMOJIS.map((emoji, i) => ({ k: 'emoji', emoji, i }))];
+    else list = [{ k: 'color' }, { k: 'eraser' }, { k: 'react' }];
+    list.forEach((it, n) => { const d = G + n * S * ext; it.x = c.centroid.x + dx * d; it.y = c.centroid.y + dy * d; it.r = it.k === 'swatch' ? 17 : 27; });
+    const e = G + ((list.length - 1) * S + 58) * ext; // handle sits clear of the last button, and slides in to hug the figurine when folded
+    list.push({ k: 'pivot', x: c.centroid.x + dx * e, y: c.centroid.y + dy * e, r: 26 });
+    return list;
+  }
+
+  function drawBars(now){
+    for (const c of objectClusters()){
+      const items = barItems(c), end = items[items.length - 2], ca = Math.cos(c.barAngle), sa = Math.sin(c.barAngle);
+      const ext = c.ext == null ? 1 : c.ext, bw = c.panel === 'colors' ? 50 : 66;
+      fx.globalAlpha = ext;
+      if (ext > 0.05) for (const [w, col] of [[bw + 6, rgba(c.color, 0.55)], [bw, 'rgba(18,19,22,0.92)']]){
+        fx.strokeStyle = col; fx.lineWidth = w; fx.beginPath();
+        fx.moveTo(c.centroid.x + ca * 70, c.centroid.y + sa * 70); fx.lineTo(end.x, end.y); fx.stroke();
+      }
+      for (const it of items){
+        if (it.k === 'emoji') continue; // drawn (and slung) by the launcher pass
+        if (it.k === 'pivot'){ // curved grip handle (concentric with the figurine): drag to rotate, tap to fold/unfold
+          const d = Math.hypot(it.x - c.centroid.x, it.y - c.centroid.y), half = 26 / d;
+          fx.globalAlpha = 1;
+          fx.strokeStyle = rgba(c.color, 0.95); fx.lineWidth = 16 + (c.collapsed ? 2.5 * Math.sin(now / 300) : 0); // gentle pulse when folded
+          fx.beginPath(); fx.arc(c.centroid.x, c.centroid.y, d, c.barAngle - half, c.barAngle + half); fx.stroke();
+          fx.fillStyle = 'rgba(18,19,22,0.8)';
+          for (const f of [-0.5, 0, 0.5]){
+            fx.beginPath(); fx.arc(c.centroid.x + Math.cos(c.barAngle + half * f) * d, c.centroid.y + Math.sin(c.barAngle + half * f) * d, 2.2, 0, 6.283); fx.fill();
+          }
+          continue;
+        }
+        if (ext < 0.05) continue;
+        fx.globalAlpha = ext;
+        const on = (it.k === 'eraser' && tool === 'eraser') || (it.k === 'swatch' && tool === 'pen' && it.color === currentColor);
+        fx.beginPath(); fx.arc(it.x, it.y, it.r, 0, 6.283);
+        fx.fillStyle = it.k === 'swatch' ? it.color : it.k === 'color' ? currentColor : on ? rgba(c.color, 0.5) : 'rgba(255,255,255,0.1)';
+        fx.fill();
+        if (on || it.k === 'color' || it.k === 'pivot'){
+          fx.strokeStyle = '#fff'; fx.lineWidth = it.k === 'pivot' ? 2 : 3;
+          if (it.k === 'pivot') fx.setLineDash([4, 4]);
+          fx.stroke(); fx.setLineDash([]);
+        }
+        if (it.k === 'eraser'){ fx.save(); fx.translate(it.x, it.y); fx.rotate(-0.6); fx.fillStyle = '#fff'; fx.fillRect(-4, -8, 16, 16); fx.fillStyle = 'rgba(255,255,255,0.45)'; fx.fillRect(-14, -8, 10, 16); fx.restore(); }
+        const label = { back: '‹', react: '😀', color: tool === 'eraser' ? '' : '✎' }[it.k];
+        if (label){
+          fx.font = it.k === 'eraser' || it.k === 'react' ? `28px ${EF}` : 'bold 30px sans-serif';
+          fx.fillStyle = it.k === 'color' ? '#111' : '#fff'; fx.fillText(label, it.x, it.y + 2);
+        }
+      }
+    }
+  }
+
+  function bounceOff(t){ // 0..1 -> pull back, then spring forward with overshoot
+    if (t < 0.4){ const u = t / 0.4; return 14 * (1 - (1 - u) * (1 - u)); }
+    const u = (t - 0.4) / 0.6;
+    return 14 * (1 - u) * Math.cos(u * Math.PI * 1.6);
+  }
+
+  function drawFx(now){
+    const t = now / 1000;
+    fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    fx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    fx.textAlign = 'center'; fx.textBaseline = 'middle'; fx.lineCap = 'round';
+
+    for (const L of links.values()){ // flowing connection between nearby figurines
+      if (L.s < 0.02) continue;
+      const A = L.a.centroid, B = L.b.centroid, d = dist(A, B), ux = (B.x - A.x) / d, uy = (B.y - A.y) / d, inset = 80;
+      if (d < inset * 2 + 20) continue;
+      const P0 = { x: A.x + ux * inset, y: A.y + uy * inset }, P2 = { x: B.x - ux * inset, y: B.y - uy * inset };
+      const sway = 26 * Math.sin(t * 1.3 + L.a.id + L.b.id);
+      const C = { x: (A.x + B.x) / 2 - uy * sway, y: (A.y + B.y) / 2 + ux * sway };
+      const al = L.s * (0.25 + 0.5 * Math.max(0, 1 - d / LINK_DIST));
+      const g = fx.createLinearGradient(P0.x, P0.y, P2.x, P2.y);
+      g.addColorStop(0, rgba(L.a.color, al)); g.addColorStop(1, rgba(L.b.color, al));
+      fx.strokeStyle = g;
+      fx.beginPath(); fx.moveTo(P0.x, P0.y); fx.quadraticCurveTo(C.x, C.y, P2.x, P2.y);
+      fx.lineWidth = 12; fx.globalAlpha = 0.25; fx.stroke();
+      fx.globalAlpha = 1; fx.lineWidth = 2; fx.setLineDash([3, 12]); fx.lineDashOffset = -t * 30; fx.stroke(); fx.setLineDash([]);
+      for (let i = 0; i < 8; i++){
+        const f = (t * 0.22 + i / 8) % 1, u = i % 2 ? f : 1 - f;
+        const q = (1 - u) * (1 - u), r = 2 * (1 - u) * u, s = u * u;
+        fx.fillStyle = rgba(i % 2 ? L.b.color : L.a.color, al * 1.3 * Math.sin(Math.PI * f));
+        fx.beginPath(); fx.arc(q * P0.x + r * C.x + s * P2.x, q * P0.y + r * C.y + s * P2.y, 3, 0, 6.283); fx.fill();
+      }
+    }
+
+    for (const p of particles){
+      const f = p.age / p.life;
+      if (p.k === 'z'){
+        fx.font = `italic 700 ${14 + 16 * f}px sans-serif`;
+        fx.fillStyle = `rgba(238,240,243,${0.75 * Math.sin(Math.PI * f)})`;
+        fx.fillText(p.t, p.x + 22 * f + Math.sin(p.ph + p.age * 2.2) * 7, p.y - 60 * f);
+      } else if (p.k === 'ring'){
+        fx.strokeStyle = rgba(p.col, 1 - f); fx.lineWidth = 4;
+        fx.beginPath(); fx.arc(p.x, p.y, (40 + 90 * f) * (p.sc || 1), 0, 6.283); fx.stroke();
+      } else if (p.k === 'float'){
+        fx.globalAlpha = 1 - f; fx.font = `40px ${EF}`; fx.fillText(p.t, p.x, p.y); fx.globalAlpha = 1;
+      } else {
+        fx.fillStyle = rgba(p.col, 1 - f); fx.beginPath(); fx.arc(p.x, p.y, 3, 0, 6.283); fx.fill();
+      }
+    }
+
+    drawBars(now);
+    for (const c of objectClusters()){ // emoji launchers
+      for (let i = 0; i < EMOJIS.length; i++){
+        const p = launcherPos(c, i);
+        if (!p) continue;
+        const sl = [...slings.values()].find(s => s.clusterId === c.id && s.idx === i);
+        fx.fillStyle = 'rgba(255,255,255,0.08)'; fx.strokeStyle = rgba(c.color, 0.55); fx.lineWidth = 2;
+        fx.beginPath(); fx.arc(p.x, p.y, 32, 0, 6.283); fx.fill(); fx.stroke();
+        let ox = 0, oy = 0, scale = 1;
+        if (sl){
+          let vx = sl.finger.x - p.x, vy = sl.finger.y - p.y;
+          const len = Math.hypot(vx, vy) || 1, cl = Math.min(len, MAX_PULL);
+          vx = vx / len * cl; vy = vy / len * cl; ox = vx; oy = vy; scale = 1.2;
+          fx.strokeStyle = rgba(c.color, 0.85); fx.lineWidth = 7 - 4 * cl / MAX_PULL;
+          fx.beginPath(); fx.moveTo(p.x, p.y); fx.lineTo(p.x + ox, p.y + oy); fx.stroke();
+          if (cl >= MIN_PULL && LOB){ // arc preview
+            const pw = cl / MAX_PULL, T = 0.6 + 0.9 * pw, rng = lobRange(pw), pk = 275 * T * T;
+            const sx = p.x + ox, sy = p.y + oy, dx = -vx / cl, dy = -vy / cl;
+            for (let k = 1; k <= 12; k++){
+              const u = k / 12;
+              fx.fillStyle = rgba(c.color, 0.7 * (1 - u * 0.6)); fx.beginPath();
+              fx.arc(sx + dx * rng * u, sy + dy * rng * u - 4 * pk * u * (1 - u), 3.5, 0, 6.283); fx.fill();
+            }
+          } else if (cl >= MIN_PULL){ // predicted path
+            const q = { x: p.x + ox, y: p.y + oy }, sp = speedMax() * cl / MAX_PULL, v = { x: -vx / cl * sp, y: -vy / cl * sp };
+            for (let k = 0; k < 14; k++){
+              q.x += v.x * 0.05; q.y += v.y * 0.05;
+              const dm = Math.exp(-FRICTION * 0.05); v.x *= dm; v.y *= dm;
+              fx.fillStyle = rgba(c.color, 0.7 * (1 - k / 14)); fx.beginPath(); fx.arc(q.x, q.y, 3.5, 0, 6.283); fx.fill();
+            }
+          }
+        } else {
+          const ph = ((now + i * 1400) % 6000) / 900; // periodic "I can be launched" hint
+          if (ph < 1){
+            const off = bounceOff(ph);
+            ox = -Math.sin(p.a) * off; oy = Math.cos(p.a) * off; // pull back sideways (down when the bar points right)
+            if (Math.abs(off) > 3){
+              fx.strokeStyle = rgba(c.color, 0.4); fx.lineWidth = 2;
+              fx.beginPath(); fx.moveTo(p.x, p.y); fx.lineTo(p.x + ox, p.y + oy); fx.stroke();
+            }
+          }
+        }
+        fx.font = `${34 * scale}px ${EF}`; fx.fillStyle = '#fff'; fx.fillText(EMOJIS[i], p.x + ox, p.y + oy + 2);
+      }
+    }
+
+    for (const p of projectiles){
+      const al = p.fade != null ? 1 - p.fade / 0.8 : 1;
+      p.trail.forEach((q, k) => {
+        fx.fillStyle = rgba(p.color, 0.35 * al * k / p.trail.length);
+        fx.beginPath(); fx.arc(q.x, q.y, 3 + 6 * k / p.trail.length, 0, 6.283); fx.fill();
+      });
+      const z = p.z || 0;
+      if (p.lob){ fx.fillStyle = `rgba(0,0,0,${0.3 * al})`; fx.beginPath(); fx.ellipse(p.x, p.y + 6, 18, 7, 0, 0, 6.283); fx.fill(); }
+      fx.save(); fx.globalAlpha = al; fx.translate(p.x, p.y - z); fx.rotate(p.rot); fx.scale(1 + z / 500, 1 + z / 500);
+      fx.font = `40px ${EF}`; fx.fillText(p.emoji, 0, 0); fx.restore();
+    }
+  }
+
+  function startFx(){
+    if (fxRunning) return;
+    fxRunning = true; fxLast = performance.now();
+    requestAnimationFrame(fxFrame);
+  }
+  function fxFrame(ts){
+    const dt = Math.min(0.05, (ts - fxLast) / 1000); fxLast = ts;
+    updateFx(dt, ts); drawFx(ts);
+    if (objectClusters().length || projectiles.length || particles.length) requestAnimationFrame(fxFrame);
+    else { fxRunning = false; fx.setTransform(dpr, 0, 0, dpr, 0, 0); fx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
+  }
+
+  // ---------- top bar UI ----------
+  function setColor(color){ currentColor = color; }
+
+  const modeBtn = document.getElementById('modeBtn');
+  modeBtn.addEventListener('click', () => {
+    mode = mode === 'draw' ? 'pan' : 'draw';
+    modeBtn.textContent = mode === 'draw' ? '1 finger: draw' : '1 finger: pan';
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    strokes.length = 0;
+    render();
+  });
+
+  document.getElementById('resetObjectsBtn').addEventListener('click', () => {
+    for (const id of toolbarEls.keys()) removeToolbarEl(id);
+    clusters.clear();
+    touchToCluster.clear();
+    activeStrokeByTouch.clear();
+    pendingBuffer.length = 0;
+    slings.clear(); projectiles.length = 0; particles.length = 0; links.clear();
+    updateDebug();
+  });
+
+  const debugPanel = document.getElementById('debug');
+  document.getElementById('debugBtn').addEventListener('click', () => {
+    debugPanel.classList.toggle('open');
+  });
+
+  const radiusSlider = document.getElementById('radiusSlider');
+  const delaySlider = document.getElementById('delaySlider');
+  radiusSlider.value = CLUSTER_RADIUS;
+  delaySlider.value = BUFFER_MS;
+  document.getElementById('radiusVal').textContent = CLUSTER_RADIUS;
+  document.getElementById('delayVal').textContent = BUFFER_MS;
+  radiusSlider.addEventListener('input', () => {
+    CLUSTER_RADIUS = Number(radiusSlider.value);
+    document.getElementById('radiusVal').textContent = CLUSTER_RADIUS;
+  });
+  delaySlider.addEventListener('input', () => {
+    BUFFER_MS = Number(delaySlider.value);
+    document.getElementById('delayVal').textContent = BUFFER_MS;
+  });
+
+  const mergeSlider = document.getElementById('mergeSlider');
+  mergeSlider.value = MERGE_WINDOW_MS;
+  document.getElementById('mergeVal').textContent = MERGE_WINDOW_MS;
+  mergeSlider.addEventListener('input', () => {
+    MERGE_WINDOW_MS = Number(mergeSlider.value);
+    document.getElementById('mergeVal').textContent = MERGE_WINDOW_MS;
+  });
+
+  function updateDebug(){
+    document.getElementById('touchCount').textContent = livePositions.size;
+    const list = document.getElementById('debugList');
+    list.innerHTML = '';
+    for (const cluster of clusters.values()){
+      const row = document.createElement('div');
+      row.textContent = `#${cluster.id} · ${cluster.type} · ${cluster.touchIds.size} pt`;
+      list.appendChild(row);
+    }
+  }
+
+  function bindSlider(sid, vid, init, set){
+    const s = document.getElementById(sid), v = document.getElementById(vid);
+    s.value = init; v.textContent = init;
+    s.addEventListener('input', () => { v.textContent = s.value; set(Number(s.value)); });
+  }
+  bindSlider('linkSlider', 'linkVal', LINK_DIST, v => { LINK_DIST = v; });
+  bindSlider('sleepSlider', 'sleepVal', SLEEP_MS / 1000, v => { SLEEP_MS = v * 1000; });
+  document.getElementById('lobChk').addEventListener('change', e => { LOB = e.target.checked; });
+
+  resize();
+  setInterval(updateDebug, 300);
+})();
+</script>
+</body>
+</html>
