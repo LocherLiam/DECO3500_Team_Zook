@@ -24,3 +24,14 @@ https://github.com/LocherLiam/DECO3500_Team_Zook/blob/main/Prototype/Initial%20F
 
 # Prototype 
 https://github.com/LocherLiam/DECO3500_Team_Zook/tree/main/Prototype
+
+# Deployment Instructions
+To test the touch table, download the html file onto a device with touchscreen capability. 
+Some devices require a text editor installed to run the file, so you may have to install visual studio code or whatever your text editor choice is.
+
+The application is quite plug and play and uses clusters of touch points to identify Figurines, which means you can test without a figurine.
+To replicate one, use three fingers in close proximity to create an object. The other main functions require 1 touch point or 2 touch points (drawing and dragging respectively) 
+
+To adjust any relevant settings such as figurine radius, UI status, etc, use the tune button on the top right and change sliders.
+
+To recreate the figurines, use three patches of copper adhesive strip on top of an aluminium wrapped plate, to mimic the electrical signal of a finger.
